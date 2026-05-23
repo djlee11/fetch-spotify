@@ -1,5 +1,6 @@
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 import os
 
 # Load environment variables from .env file
@@ -43,8 +44,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "spotify_dashboard.wsgi.application"
 
-# No database needed — we use signed cookie sessions
-DATABASES = {}
+# SQLite locally, Postgres on Render (via DATABASE_URL env var)
+DATABASES = {
+    "default": dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR}/db.sqlite3",
+        conn_max_age=600,
+    )
+}
 
 # Store session data in a signed cookie (no DB required)
 SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
