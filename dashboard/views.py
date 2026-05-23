@@ -56,6 +56,13 @@ def callback_view(request):
 
 
 def logout_view(request):
+    sp = get_spotify_client(request)
+    if sp:
+        try:
+            owner_id = sp.current_user()["id"]
+            friends_store.remove_all_friends(owner_id)
+        except Exception:
+            pass
     request.session.flush()
     return redirect("login")
 
@@ -73,19 +80,9 @@ def dashboard_view(request):
         return redirect("login")
 
     current_user = sp.current_user()
+    owner_id = current_user["id"]
 
-    # One-time migration: if friends used to live in the session, port them
-    # to disk on first dashboard load after this change.
-    session_friends = request.session.get("friend_ids")
-    if session_friends and not friends_store.load_friends():
-        for uid in session_friends:
-            if isinstance(uid, str) and uid:
-                friends_store.add_friend(uid)
-        request.session.pop("friend_ids", None)
-        request.session.modified = True
-
-    # Friends list now lives in friends.json on disk
-    friend_ids = friends_store.load_friends()
+    friend_ids = friends_store.load_friends(owner_id)
 
     # Fetch followed artists so the user can easily add them
     followed_artists = []
@@ -131,6 +128,7 @@ def add_friend(request):
     if not sp:
         return redirect("login")
 
+    owner_id = sp.current_user()["id"]
     uid = friends_store.parse_user_id(request.POST.get("user_id", ""))
     if not uid:
         return redirect("dashboard")
@@ -141,7 +139,7 @@ def add_friend(request):
     except Exception:
         return redirect("dashboard")  # silently ignore invalid IDs
 
-    friends_store.add_friend(uid)
+    friends_store.add_friend(owner_id, uid)
     return redirect("dashboard")
 
 
@@ -159,7 +157,8 @@ def add_friends_bulk(request):
     raw = request.POST.get("user_ids", "")
     lines = [ln for ln in raw.splitlines() if ln.strip()]
 
-    existing = set(friends_store.load_friends())
+    owner_id = sp.current_user()["id"]
+    existing = set(friends_store.load_friends(owner_id))
     added = []
     duplicates = []
     invalid = []
@@ -186,7 +185,7 @@ def add_friends_bulk(request):
             invalid.append(uid)
             continue
 
-        friends_store.add_friend(uid)
+        friends_store.add_friend(owner_id, uid)
         existing.add(uid)
         added.append(uid)
 
@@ -201,9 +200,13 @@ def add_friends_bulk(request):
 
 @require_POST
 def remove_friend(request):
+    sp = get_spotify_client(request)
+    if not sp:
+        return redirect("login")
+    owner_id = sp.current_user()["id"]
     uid = request.POST.get("user_id", "").strip()
     if uid:
-        friends_store.remove_friend(uid)
+        friends_store.remove_friend(owner_id, uid)
     return redirect("dashboard")
 
 
@@ -216,7 +219,8 @@ def export_friends(request):
     if not get_spotify_client(request):
         return redirect("login")
 
-    friends = friends_store.load_friends()
+    owner_id = get_spotify_client(request).current_user()["id"]
+    friends = friends_store.load_friends(owner_id)
     payload = json.dumps({"friends": friends}, indent=2)
     response = HttpResponse(payload, content_type="application/json")
     response["Content-Disposition"] = 'attachment; filename="friends.json"'
@@ -268,11 +272,12 @@ def import_friends(request):
         request.session.modified = True
         return redirect("dashboard")
 
+    owner_id = sp.current_user()["id"]
     replace = request.POST.get("replace") == "on"
     if replace:
-        friends_store.save_friends([])
+        friends_store.save_friends(owner_id, [])
 
-    existing = set(friends_store.load_friends())
+    existing = set(friends_store.load_friends(owner_id))
     added = []
     duplicates = []
 
@@ -285,7 +290,7 @@ def import_friends(request):
         if uid in existing:
             duplicates.append(uid)
             continue
-        friends_store.add_friend(uid)
+        friends_store.add_friend(owner_id, uid)
         existing.add(uid)
         added.append(uid)
 

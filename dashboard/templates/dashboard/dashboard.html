@@ -27,6 +27,7 @@
       {% endif %}
     {% endif %}
     <a href="{% url 'logout' %}"
+       onclick="return confirm('Your friend list will be cleared when you log out.\n\nExport it first if you’d like to save it.\n\nLog out anyway?')"
        class="text-xs text-gray-500 hover:text-white transition-colors px-3 py-1 rounded border border-white/10 hover:border-white/30">
       Log out
     </a>
