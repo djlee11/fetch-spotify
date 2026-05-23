@@ -1,0 +1,705 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Playlist Feed{% endblock %}
+
+{% block content %}
+
+{# ── Navbar ─────────────────────────────────────────────────────────────── #}
+<nav class="sticky top-0 z-50 bg-[#121212]/90 backdrop-blur border-b border-white/5 px-6 py-3 flex items-center justify-between">
+  <span class="flex items-center gap-2 font-bold text-lg">
+    <svg viewBox="0 0 24 24" class="w-6 h-6 fill-[#1DB954]" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.516 17.312a.75.75 0 01-1.032.25c-2.827-1.728-6.387-2.118-10.578-1.16a.75.75 0 01-.334-1.463c4.587-1.048 8.522-.597 11.694 1.341a.75.75 0 01.25 1.032zm1.472-3.276a.937.937 0 01-1.29.31c-3.237-1.99-8.168-2.567-11.993-1.404a.937.937 0 01-.545-1.794c4.373-1.328 9.808-.685 13.518 1.599a.937.937 0 01.31 1.29zm.127-3.408C15.27 8.4 8.898 8.187 5.525 9.194a1.125 1.125 0 01-.651-2.154c3.9-1.18 10.376-.952 14.465 1.595a1.125 1.125 0 01-1.224 1.893z"/>
+    </svg>
+    Playlist Feed
+  </span>
+
+  <div class="flex items-center gap-4">
+    {% if current_user %}
+      <span class="text-sm text-gray-400 hidden sm:inline">
+        {{ current_user.display_name }}
+      </span>
+      {% if current_user.images %}
+        <img src="{{ current_user.images.0.url }}" alt="avatar"
+             class="w-8 h-8 rounded-full object-cover border border-white/10" />
+      {% else %}
+        <div class="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-xs">
+          {{ current_user.display_name|first|upper }}
+        </div>
+      {% endif %}
+    {% endif %}
+    <a href="{% url 'logout' %}"
+       class="text-xs text-gray-500 hover:text-white transition-colors px-3 py-1 rounded border border-white/10 hover:border-white/30">
+      Log out
+    </a>
+  </div>
+</nav>
+
+<div class="max-w-5xl mx-auto px-4 py-8">
+
+  {# ── Tabs + Reload ───────────────────────────────────────────────────────── #}
+  <div class="flex items-center gap-1 mb-6 border-b border-white/10">
+    <button id="tab-friends" onclick="switchTab('friends')"
+            class="tab-btn px-4 py-2 text-sm font-medium text-white border-b-2 border-[#1DB954] -mb-px transition-colors">
+      Friends
+    </button>
+    <button id="tab-following" onclick="switchTab('following')"
+            class="tab-btn px-4 py-2 text-sm font-medium text-gray-500 border-b-2 border-transparent -mb-px hover:text-gray-300 transition-colors">
+      Following
+    </button>
+    <button onclick="reloadFeed()"
+            title="Reload feed"
+            class="ml-auto mb-px flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition-colors px-3 py-1.5 rounded hover:bg-white/5">
+      <svg id="reload-icon" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Reload
+    </button>
+  </div>
+
+  {# ── Error banner ───────────────────────────────────────────────────────── #}
+  {% if error_message %}
+  <div class="mb-6 bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm">
+    {{ error_message }}
+  </div>
+  {% endif %}
+
+  {# ── Bulk-add result banner ─────────────────────────────────────────────── #}
+  {% if bulk_result %}
+  <div class="mb-6 bg-[#181818] border border-white/10 rounded-lg px-4 py-3 text-sm">
+    <div class="flex flex-wrap gap-x-4 gap-y-1">
+      {% if bulk_result.added %}
+      <span class="text-[#1DB954]">
+        ✓ Added {{ bulk_result.added|length }}
+      </span>
+      {% endif %}
+      {% if bulk_result.duplicates %}
+      <span class="text-gray-400">
+        — {{ bulk_result.duplicates|length }} already on your list
+      </span>
+      {% endif %}
+      {% if bulk_result.invalid %}
+      <span class="text-red-400" title="{{ bulk_result.invalid|join:', ' }}">
+        ✕ {{ bulk_result.invalid|length }} invalid
+      </span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    {# ── Left column: Feed ───────────────────────────────────────────────── #}
+    <div class="lg:col-span-2 space-y-4">
+
+    {# ---- Friends tab panel ---- #}
+    <div id="panel-friends">
+
+      {% if not friend_ids %}
+      <div class="bg-[#181818] rounded-xl p-8 text-center text-gray-400">
+        <svg class="w-12 h-12 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+        </svg>
+        <p class="font-medium mb-1">No friends added yet</p>
+        <p class="text-sm">Add a Spotify user ID or profile URL on the right →</p>
+      </div>
+
+      {% elif not entries %}
+      <div class="bg-[#181818] rounded-xl p-8 text-center text-gray-400">
+        <p class="font-medium mb-1">No recent updates found</p>
+        <p class="text-sm">Your friends either have no public playlists or haven't added tracks recently.</p>
+      </div>
+
+      {% else %}
+        {% for entry in entries %}
+        <div class="bg-[#181818] hover:bg-[#282828] transition-colors rounded-xl p-5 flex gap-4">
+
+          {# Playlist cover art #}
+          {% with cover=entry.playlist.images %}
+          {% if cover %}
+          <a href="{{ entry.playlist.external_urls.spotify }}" target="_blank" rel="noopener">
+            <img src="{{ cover.0.url }}" alt="playlist cover"
+                 class="w-16 h-16 rounded-lg object-cover flex-shrink-0 hover:opacity-80 transition-opacity" />
+          </a>
+          {% else %}
+          <div class="w-16 h-16 rounded-lg bg-gray-700 flex-shrink-0 flex items-center justify-center">
+            <svg class="w-7 h-7 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" />
+            </svg>
+          </div>
+          {% endif %}
+          {% endwith %}
+
+          {# Info #}
+          <div class="flex-1 min-w-0">
+
+            {# Row 1: User + date #}
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <button type="button"
+                      onclick="openFriendPanel('{{ entry.user_id }}')"
+                      class="flex items-center gap-1.5 text-sm font-semibold text-white hover:text-[#1DB954] transition-colors text-left min-w-0">
+                {% if entry.avatar_url %}
+                <img src="{{ entry.avatar_url }}" alt="{{ entry.display_name }}"
+                     class="w-5 h-5 rounded-full flex-shrink-0" />
+                {% endif %}
+                <span class="truncate">{{ entry.display_name }}</span>
+              </button>
+              <span class="text-xs text-gray-500 whitespace-nowrap flex-shrink-0"
+                    title="{{ entry.added_at }}">
+                {{ entry.added_at|slice:":10" }}
+              </span>
+            </div>
+
+            {# Row 2: Playlist name — tries Spotify app, falls back to web player #}
+            <a href="{{ entry.playlist.external_urls.spotify }}"
+               onclick="event.preventDefault(); openSpotifyLink('spotify:playlist:{{ entry.playlist.id }}', '{{ entry.playlist.external_urls.spotify }}')"
+               class="text-sm text-gray-300 hover:text-white hover:underline truncate block mb-1">
+              {{ entry.playlist.name }}
+            </a>
+
+            {# Row 3: Last added track #}
+            {% if entry.track %}
+            <p class="text-sm text-gray-400 truncate">
+              <span class="text-gray-600">Last added:</span>
+              {{ entry.track.name }}
+              {% if entry.track.artists %}
+              — <span class="text-gray-500">{{ entry.track.artists.0.name }}</span>
+              {% endif %}
+            </p>
+            {% endif %}
+
+            {# Row 4: Track count #}
+            <p class="text-xs text-gray-600 mt-1">
+              {{ entry.playlist.tracks.total }} track{{ entry.playlist.tracks.total|pluralize }}
+            </p>
+          </div>
+        </div>
+        {% endfor %}
+
+        {# Refresh hint #}
+        <p class="text-center text-xs text-gray-600 pt-2">
+          Reload the page to refresh the feed.
+        </p>
+      {% endif %}
+    </div>{# /panel-friends #}
+
+    {# ---- Following tab panel ---- #}
+    <div id="panel-following" class="hidden space-y-4">
+
+      {# Loading state #}
+      <div id="following-loading" class="flex items-center justify-center py-20 text-gray-500">
+        <svg class="w-5 h-5 animate-spin mr-2 text-[#1DB954]" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 12 0 12 12z"></path>
+        </svg>
+        Loading your followed playlists…
+      </div>
+
+      {# Content injected by JS #}
+      <div id="following-content" class="hidden space-y-4"></div>
+
+      {# Error state #}
+      <div id="following-error" class="hidden bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 text-red-300 text-sm"></div>
+
+    </div>{# /panel-following #}
+
+    </div>{# /left col #}
+
+    {# ── Right column: Sidebar ───────────────────────────────────────────── #}
+    <div class="space-y-5">
+
+      {# Add friend form — single + bulk #}
+      <div id="add-friend-card" class="bg-[#181818] rounded-xl p-5">
+        <div class="flex items-center justify-between mb-1">
+          <h2 class="font-semibold">Add a Friend</h2>
+          <button type="button" id="toggle-bulk-btn"
+                  onclick="
+                    var card = document.getElementById('add-friend-card');
+                    card.querySelector('[data-single]').classList.toggle('hidden');
+                    card.querySelector('[data-bulk]').classList.toggle('hidden');
+                    this.textContent = (this.textContent.trim() === 'Bulk paste') ? 'Single' : 'Bulk paste';
+                  "
+                  class="text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded border border-white/10">
+            Bulk paste
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mb-3">
+          User ID or full profile URL.<br>
+          e.g. <code class="bg-gray-800 px-1 rounded">open.spotify.com/user/abc123</code>
+        </p>
+
+        {# Single-add (default visible) #}
+        <form data-single method="post" action="{% url 'add_friend' %}" class="flex gap-2">
+          {% csrf_token %}
+          <input type="text" name="user_id" placeholder="User ID or URL"
+                 class="flex-1 bg-[#282828] text-white text-sm rounded-lg px-3 py-2 border border-white/10
+                        focus:outline-none focus:border-[#1DB954] placeholder-gray-600 min-w-0" />
+          <button type="submit"
+                  class="bg-[#1DB954] hover:bg-[#1ed760] text-black text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex-shrink-0">
+            Add
+          </button>
+        </form>
+
+        {# Bulk-add (hidden by default) #}
+        <form data-bulk method="post" action="{% url 'add_friends_bulk' %}" class="hidden space-y-2">
+          {% csrf_token %}
+          <textarea name="user_ids" rows="6" placeholder="One user ID or profile URL per line…"
+                    class="w-full bg-[#282828] text-white text-sm rounded-lg px-3 py-2 border border-white/10
+                           focus:outline-none focus:border-[#1DB954] placeholder-gray-600 font-mono"></textarea>
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs text-gray-600">
+              We'll validate each line against Spotify and skip duplicates.
+            </p>
+            <button type="submit"
+                    class="bg-[#1DB954] hover:bg-[#1ed760] text-black text-sm font-semibold px-4 py-2 rounded-lg transition-colors flex-shrink-0">
+              Add all
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {# Current friends list #}
+      {% if friend_ids %}
+      <div class="bg-[#181818] rounded-xl p-5">
+        <h2 class="font-semibold mb-3">Watching ({{ friend_ids|length }})</h2>
+        <ul class="space-y-2">
+          {% for uid in friend_ids %}
+          {% with info=friend_info|default_if_none:None %}
+          <li class="flex items-center justify-between gap-2 text-sm">
+            {% if uid in friend_info %}
+              {% with e=friend_info|default_if_none:None %}
+              {# Use entries list to get the matching info object #}
+              {% for e in entries %}{% if e.user_id == uid %}
+              <button type="button"
+                      onclick="openFriendPanel('{{ uid }}')"
+                      class="flex items-center gap-2 text-gray-300 hover:text-white truncate min-w-0 text-left">
+                {% if e.avatar_url %}
+                <img src="{{ e.avatar_url }}" class="w-6 h-6 rounded-full flex-shrink-0 object-cover" />
+                {% else %}
+                <div class="w-6 h-6 rounded-full bg-gray-700 flex-shrink-0 flex items-center justify-center text-xs">
+                  {{ e.display_name|first|upper }}
+                </div>
+                {% endif %}
+                <span class="truncate">{{ e.display_name }}</span>
+              </button>
+              {% endif %}{% endfor %}
+              {% endwith %}
+            {% else %}
+              <span class="flex items-center gap-2 text-gray-400 truncate min-w-0">
+                <div class="w-6 h-6 rounded-full bg-gray-700 flex-shrink-0"></div>
+                <span class="truncate text-gray-500">{{ uid }}</span>
+              </span>
+            {% endif %}
+
+            <form method="post" action="{% url 'remove_friend' %}" class="flex-shrink-0">
+              {% csrf_token %}
+              <input type="hidden" name="user_id" value="{{ uid }}" />
+              <button type="submit"
+                      class="text-gray-600 hover:text-red-400 transition-colors text-xs px-2 py-0.5 rounded">
+                ✕
+              </button>
+            </form>
+          </li>
+          {% endwith %}
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {# Import / Export #}
+      <div class="bg-[#181818] rounded-xl p-5">
+        <h2 class="font-semibold mb-3">Import / Export</h2>
+
+        {# Export #}
+        <a href="{% url 'export_friends' %}"
+           class="flex items-center justify-center gap-2 w-full bg-[#282828] hover:bg-[#333] text-sm text-gray-300 hover:text-white font-medium px-4 py-2 rounded-lg transition-colors mb-3">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export friends.json
+        </a>
+
+        {# Import #}
+        <form method="post" action="{% url 'import_friends' %}" enctype="multipart/form-data" class="space-y-2">
+          {% csrf_token %}
+          <label class="block text-xs text-gray-500 mb-1">Import from JSON file</label>
+          <input type="file" name="friends_file" accept=".json,application/json"
+                 class="block w-full text-xs text-gray-400 file:mr-3 file:py-1.5 file:px-3
+                        file:rounded-lg file:border-0 file:text-xs file:font-medium
+                        file:bg-[#282828] file:text-gray-300 hover:file:bg-[#333]
+                        cursor-pointer" />
+          <div class="flex items-center justify-between gap-2 pt-1">
+            <label class="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none">
+              <input type="checkbox" name="replace"
+                     class="accent-[#1DB954] rounded" />
+              Replace existing list
+            </label>
+            <button type="submit"
+                    class="bg-[#1DB954] hover:bg-[#1ed760] text-black text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors flex-shrink-0">
+              Import
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {# Followed artists — quick-add #}
+      {% if followed_artists %}
+      <div class="bg-[#181818] rounded-xl p-5">
+        <h2 class="font-semibold mb-1">Followed Artists</h2>
+        <p class="text-xs text-gray-500 mb-3">
+          Artists' public playlists are checked too — click to add them.
+        </p>
+        <div class="space-y-2 max-h-64 overflow-y-auto scrollbar-hide">
+          {% for artist in followed_artists %}
+          <form method="post" action="{% url 'add_friend' %}">
+            {% csrf_token %}
+            <input type="hidden" name="user_id" value="{{ artist.id }}" />
+            <button type="submit"
+                    class="w-full flex items-center gap-3 text-left text-sm text-gray-300
+                           hover:text-white hover:bg-[#282828] rounded-lg px-2 py-1.5 transition-colors
+                           {% if artist.id in friend_ids %}opacity-40 pointer-events-none{% endif %}">
+              {% if artist.images %}
+              <img src="{{ artist.images.0.url }}" class="w-7 h-7 rounded-full object-cover flex-shrink-0" />
+              {% else %}
+              <div class="w-7 h-7 rounded-full bg-gray-700 flex-shrink-0"></div>
+              {% endif %}
+              <span class="truncate">{{ artist.name }}</span>
+              {% if artist.id in friend_ids %}
+              <span class="ml-auto text-[#1DB954] text-xs">✓</span>
+              {% endif %}
+            </button>
+          </form>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>{# /right col #}
+  </div>{# /grid #}
+
+</div>
+
+{# ── Friend detail slide-over panel ────────────────────────────────────────── #}
+<div id="friend-panel" class="fixed inset-0 z-[100] hidden" aria-modal="true" role="dialog">
+  {# Backdrop #}
+  <div id="panel-backdrop"
+       class="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 opacity-0"
+       onclick="closePanel()"></div>
+
+  {# Drawer #}
+  <div id="panel-drawer"
+       class="absolute right-0 top-0 h-full w-full max-w-md bg-[#0d0d0d] border-l border-white/10
+              shadow-2xl flex flex-col transform translate-x-full transition-transform duration-300">
+
+    {# Header #}
+    <div class="p-5 border-b border-white/10 flex items-center gap-3 flex-shrink-0">
+      <div id="panel-avatar"
+           class="w-10 h-10 rounded-full bg-gray-700 flex-shrink-0 overflow-hidden flex items-center justify-center text-sm font-semibold">
+      </div>
+      <div class="flex-1 min-w-0">
+        <div id="panel-name" class="font-semibold text-white truncate">—</div>
+        <div class="text-xs text-gray-500">Top 10 recently added tracks</div>
+      </div>
+      <button onclick="closePanel()"
+              class="text-gray-500 hover:text-white transition-colors ml-2 flex-shrink-0"
+              aria-label="Close panel">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    {# Content area #}
+    <div class="flex-1 overflow-y-auto p-4">
+
+      {# Loading spinner #}
+      <div id="panel-loading" class="flex items-center justify-center py-20 text-gray-500">
+        <svg class="w-5 h-5 animate-spin mr-2 text-[#1DB954]" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 12 0 12 12z"></path>
+        </svg>
+        Loading…
+      </div>
+
+      {# Track list (hidden until loaded) #}
+      <div id="panel-tracks" class="hidden space-y-2"></div>
+
+      {# Error state #}
+      <div id="panel-error" class="hidden text-center py-16 text-red-400 text-sm"></div>
+
+    </div>
+
+    {# Footer — open profile on Spotify #}
+    <div class="p-4 border-t border-white/10 flex-shrink-0">
+      <a id="panel-spotify-link" href="#"
+         class="flex items-center justify-center gap-2 w-full bg-[#1DB954] hover:bg-[#1ed760]
+                text-black text-sm font-semibold px-4 py-2 rounded-lg transition-colors">
+        <svg viewBox="0 0 24 24" class="w-4 h-4 fill-black flex-shrink-0" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.516 17.312a.75.75 0 01-1.032.25c-2.827-1.728-6.387-2.118-10.578-1.16a.75.75 0 01-.334-1.463c4.587-1.048 8.522-.597 11.694 1.341a.75.75 0 01.25 1.032zm1.472-3.276a.937.937 0 01-1.29.31c-3.237-1.99-8.168-2.567-11.993-1.404a.937.937 0 01-.545-1.794c4.373-1.328 9.808-.685 13.518 1.599a.937.937 0 01.31 1.29zm.127-3.408C15.27 8.4 8.898 8.187 5.525 9.194a1.125 1.125 0 01-.651-2.154c3.9-1.18 10.376-.952 14.465 1.595a1.125 1.125 0 01-1.224 1.893z"/>
+        </svg>
+        Open profile on Spotify
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ────────────────────────────────────────────────────────────
+var followingLoaded = false;
+
+window.switchTab = function (tab) {
+  var isFriends = tab === 'friends';
+
+  document.getElementById('panel-friends').classList.toggle('hidden', !isFriends);
+  document.getElementById('panel-following').classList.toggle('hidden', isFriends);
+
+  document.getElementById('tab-friends').classList.toggle('text-white', isFriends);
+  document.getElementById('tab-friends').classList.toggle('border-[#1DB954]', isFriends);
+  document.getElementById('tab-friends').classList.toggle('text-gray-500', !isFriends);
+  document.getElementById('tab-friends').classList.toggle('border-transparent', !isFriends);
+
+  document.getElementById('tab-following').classList.toggle('text-white', !isFriends);
+  document.getElementById('tab-following').classList.toggle('border-[#1DB954]', !isFriends);
+  document.getElementById('tab-following').classList.toggle('text-gray-500', isFriends);
+  document.getElementById('tab-following').classList.toggle('border-transparent', isFriends);
+
+  if (!isFriends && !followingLoaded) {
+    followingLoaded = true;
+    loadFollowingTab();
+  }
+};
+
+window.reloadFeed = function () {
+  var icon = document.getElementById('reload-icon');
+  icon.classList.add('animate-spin');
+
+  // Always do a full page reload — clears all server-side data too
+  window.location.reload();
+};
+
+function loadFollowingTab() {
+  fetch('/me/following/')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data.error) throw new Error(data.error);
+      renderFollowing(data.playlists);
+    })
+    .catch(function (err) {
+      document.getElementById('following-loading').classList.add('hidden');
+      var el = document.getElementById('following-error');
+      el.textContent = 'Could not load playlists: ' + err.message;
+      el.classList.remove('hidden');
+    });
+}
+
+function renderFollowing(playlists) {
+  document.getElementById('following-loading').classList.add('hidden');
+  var el = document.getElementById('following-content');
+
+  if (!playlists || playlists.length === 0) {
+    el.innerHTML = '<div class="bg-[#181818] rounded-xl p-8 text-center text-gray-400">' +
+      '<p class="font-medium mb-1">No followed playlists found</p>' +
+      '<p class="text-sm">Follow playlists on Spotify and they\'ll appear here.</p>' +
+      '</div>';
+    el.classList.remove('hidden');
+    return;
+  }
+
+  var musicNote = '<svg class="w-7 h-7 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" /></svg>';
+
+  function esc(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  el.innerHTML = playlists.map(function (p) {
+    var cover = p.playlist_cover
+      ? '<a href="' + esc(p.playlist_url) + '" onclick="event.preventDefault(); openSpotifyLink(\'spotify:playlist:' + esc(p.playlist_id) + '\', \'' + esc(p.playlist_url) + '\')">' +
+          '<img src="' + esc(p.playlist_cover) + '" alt="cover" class="w-16 h-16 rounded-lg object-cover flex-shrink-0 hover:opacity-80 transition-opacity" /></a>'
+      : '<div class="w-16 h-16 rounded-lg bg-gray-700 flex-shrink-0 flex items-center justify-center">' + musicNote + '</div>';
+
+    var track = p.track || {};
+    var artists = (track.artists || []).map(function (a) { return esc(a.name); }).join(', ');
+
+    return '<div class="bg-[#181818] hover:bg-[#282828] transition-colors rounded-xl p-5 flex gap-4">' +
+      cover +
+      '<div class="flex-1 min-w-0">' +
+        '<div class="flex items-center justify-between gap-2 mb-1">' +
+          '<span class="text-sm font-semibold text-gray-400 truncate">by ' + esc(p.owner_name) + '</span>' +
+          '<span class="text-xs text-gray-500 whitespace-nowrap flex-shrink-0">' + esc((p.added_at || '').slice(0, 10)) + '</span>' +
+        '</div>' +
+        '<a href="' + esc(p.playlist_url) + '" onclick="event.preventDefault(); openSpotifyLink(\'spotify:playlist:' + esc(p.playlist_id) + '\', \'' + esc(p.playlist_url) + '\')" ' +
+           'class="text-sm text-gray-300 hover:text-white hover:underline truncate block mb-1">' +
+          esc(p.playlist_name) +
+        '</a>' +
+        (track.name
+          ? '<p class="text-sm text-gray-400 truncate"><span class="text-gray-600">Last added:</span> ' + esc(track.name) + (artists ? ' — <span class="text-gray-500">' + artists + '</span>' : '') + '</p>'
+          : '') +
+        '<p class="text-xs text-gray-600 mt-1">' + esc(p.total_tracks) + ' track' + (p.total_tracks !== 1 ? 's' : '') + '</p>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  el.classList.remove('hidden');
+}
+</script>
+
+<script>
+  // Try to open the Spotify app; fall back to web player if app isn't installed.
+  window.openSpotifyLink = function (appUri, webUrl) {
+    var fallback = setTimeout(function () {
+      window.location.href = webUrl;
+    }, 1500);
+
+    // If the app opens it steals focus — cancel the fallback.
+    window.addEventListener('blur', function () {
+      clearTimeout(fallback);
+    }, { once: true });
+
+    window.location.href = appUri;
+  };
+</script>
+
+<script>
+(function () {
+  var musicNoteIcon = '<svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" /></svg>';
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // Cache: { userId -> { data, fetchedAt } }
+  var panelCache = {};
+  var CACHE_TTL  = 5 * 60 * 1000; // 5 minutes in ms
+
+  window.openFriendPanel = function (userId) {
+    var panel    = document.getElementById('friend-panel');
+    var drawer   = document.getElementById('panel-drawer');
+    var backdrop = document.getElementById('panel-backdrop');
+
+    // Slide in immediately
+    panel.classList.remove('hidden');
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        drawer.classList.remove('translate-x-full');
+        backdrop.classList.remove('opacity-0');
+        backdrop.classList.add('opacity-100');
+      });
+    });
+
+    // Check cache first
+    var cached = panelCache[userId];
+    if (cached && (Date.now() - cached.fetchedAt) < CACHE_TTL) {
+      // Restore cached state without showing a loading flash
+      document.getElementById('panel-loading').classList.add('hidden');
+      document.getElementById('panel-error').classList.add('hidden');
+      renderPanel(cached.data);
+      return;
+    }
+
+    // Cache miss — reset UI and fetch
+    document.getElementById('panel-name').textContent = '—';
+    document.getElementById('panel-avatar').innerHTML = '';
+    document.getElementById('panel-spotify-link').href = '#';
+    document.getElementById('panel-spotify-link').onclick = null;
+    document.getElementById('panel-loading').classList.remove('hidden');
+    document.getElementById('panel-tracks').classList.add('hidden');
+    document.getElementById('panel-tracks').innerHTML = '';
+    document.getElementById('panel-error').classList.add('hidden');
+
+    fetch('/friends/' + encodeURIComponent(userId) + '/tracks/')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) throw new Error(data.error);
+        panelCache[userId] = { data: data, fetchedAt: Date.now() };
+        renderPanel(data);
+      })
+      .catch(function (err) {
+        document.getElementById('panel-loading').classList.add('hidden');
+        var el = document.getElementById('panel-error');
+        el.textContent = 'Could not load tracks: ' + err.message;
+        el.classList.remove('hidden');
+      });
+  };
+
+  window.closePanel = function () {
+    var panel    = document.getElementById('friend-panel');
+    var drawer   = document.getElementById('panel-drawer');
+    var backdrop = document.getElementById('panel-backdrop');
+
+    drawer.classList.add('translate-x-full');
+    backdrop.classList.remove('opacity-100');
+    backdrop.classList.add('opacity-0');
+    setTimeout(function () { panel.classList.add('hidden'); }, 300);
+  };
+
+  // Close on Escape key
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') window.closePanel();
+  });
+
+  function renderPanel(data) {
+    var user   = data.user;
+    var tracks = data.tracks;
+
+    // Update header
+    document.getElementById('panel-name').textContent = user.display_name;
+
+    var avatarEl = document.getElementById('panel-avatar');
+    if (user.avatar_url) {
+      avatarEl.innerHTML = '<img src="' + escapeHtml(user.avatar_url) + '" class="w-full h-full object-cover" />';
+    } else {
+      avatarEl.textContent = user.display_name.charAt(0).toUpperCase();
+    }
+
+    var profileLink = document.getElementById('panel-spotify-link');
+    profileLink.href = user.external_url;
+    profileLink.onclick = function (e) {
+      e.preventDefault();
+      openSpotifyLink('spotify:user:' + user.id, user.external_url);
+    };
+    document.getElementById('panel-loading').classList.add('hidden');
+
+    var tracksEl = document.getElementById('panel-tracks');
+
+    if (!tracks || tracks.length === 0) {
+      tracksEl.innerHTML = '<p class="text-center py-12 text-gray-500 text-sm">No recently added tracks found.</p>';
+    } else {
+      tracksEl.innerHTML = tracks.map(function (item, idx) {
+        var cover = item.playlist_cover
+          ? '<img src="' + escapeHtml(item.playlist_cover) + '" class="w-10 h-10 rounded object-cover flex-shrink-0" />'
+          : '<div class="w-10 h-10 rounded bg-[#282828] flex-shrink-0 flex items-center justify-center">' + musicNoteIcon + '</div>';
+
+        var track   = item.track || {};
+        var artists = (track.artists || []).map(function (a) { return escapeHtml(a.name); }).join(', ');
+        var date    = (item.added_at || '').slice(0, 10);
+
+        return (
+          '<div class="bg-[#181818] rounded-lg p-3 flex gap-3 items-start">' +
+            '<span class="text-xs text-gray-600 font-mono mt-3 w-4 flex-shrink-0 text-right">' + (idx + 1) + '</span>' +
+            cover +
+            '<div class="flex-1 min-w-0">' +
+              '<p class="text-sm font-medium text-white truncate">' + escapeHtml(track.name || '—') + '</p>' +
+              '<p class="text-xs text-gray-400 truncate">' + (artists || '—') + '</p>' +
+              '<p class="text-xs text-gray-600 mt-1">' +
+                '<a href="' + escapeHtml(item.playlist_url) + '" ' +
+                   'onclick="event.preventDefault(); openSpotifyLink(\'spotify:playlist:' + escapeHtml(item.playlist_id) + '\', \'' + escapeHtml(item.playlist_url) + '\')" ' +
+                   'class="text-[#1DB954] hover:underline">' + escapeHtml(item.playlist_name) + '</a>' +
+                ' &middot; ' + escapeHtml(date) +
+              '</p>' +
+            '</div>' +
+          '</div>'
+        );
+      }).join('');
+    }
+
+    tracksEl.classList.remove('hidden');
+  }
+}());
+</script>
+
+{% endblock %}

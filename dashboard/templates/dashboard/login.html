@@ -1,0 +1,36 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Login — Spotify Playlist Feed{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center px-4">
+  <div class="text-center max-w-md w-full">
+
+    <!-- Spotify-style logo mark -->
+    <div class="flex justify-center mb-8">
+      <svg viewBox="0 0 24 24" class="w-16 h-16 fill-[#1DB954]" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.516 17.312a.75.75 0 01-1.032.25c-2.827-1.728-6.387-2.118-10.578-1.16a.75.75 0 01-.334-1.463c4.587-1.048 8.522-.597 11.694 1.341a.75.75 0 01.25 1.032zm1.472-3.276a.937.937 0 01-1.29.31c-3.237-1.99-8.168-2.567-11.993-1.404a.937.937 0 01-.545-1.794c4.373-1.328 9.808-.685 13.518 1.599a.937.937 0 01.31 1.29zm.127-3.408C15.27 8.4 8.898 8.187 5.525 9.194a1.125 1.125 0 01-.651-2.154c3.9-1.18 10.376-.952 14.465 1.595a1.125 1.125 0 01-1.224 1.893z"/>
+      </svg>
+    </div>
+
+    <h1 class="text-4xl font-bold mb-3">Playlist Feed</h1>
+    <p class="text-gray-400 text-lg mb-2">
+      See when your friends last updated their public playlists.
+    </p>
+    <p class="text-gray-500 text-sm mb-10">
+      Sign in with your Spotify account to get started.
+    </p>
+
+    <a href="{% url 'spotify_auth' %}"
+       class="inline-flex items-center gap-3 bg-[#1DB954] hover:bg-[#1ed760] text-black font-semibold text-base px-8 py-3 rounded-full transition-colors duration-150">
+      <svg viewBox="0 0 24 24" class="w-5 h-5 fill-black" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.516 17.312a.75.75 0 01-1.032.25c-2.827-1.728-6.387-2.118-10.578-1.16a.75.75 0 01-.334-1.463c4.587-1.048 8.522-.597 11.694 1.341a.75.75 0 01.25 1.032zm1.472-3.276a.937.937 0 01-1.29.31c-3.237-1.99-8.168-2.567-11.993-1.404a.937.937 0 01-.545-1.794c4.373-1.328 9.808-.685 13.518 1.599a.937.937 0 01.31 1.29zm.127-3.408C15.27 8.4 8.898 8.187 5.525 9.194a1.125 1.125 0 01-.651-2.154c3.9-1.18 10.376-.952 14.465 1.595a1.125 1.125 0 01-1.224 1.893z"/>
+      </svg>
+      Connect with Spotify
+    </a>
+
+    <p class="text-gray-600 text-xs mt-8">
+      We only request <code class="bg-gray-800 px-1 rounded">user-follow-read</code> — read-only access to who you follow.
+    </p>
+  </div>
+</div>
+{% endblock %}

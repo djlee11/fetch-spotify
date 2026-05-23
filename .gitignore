@@ -1,0 +1,34 @@
+# Personal data — friend list
+friends.json
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Virtualenv
+venv/
+.venv/
+env/
+
+# Django
+*.sqlite3
+*.log
+local_settings.py
+
+# Django static/media collected files
+staticfiles/
+mediafiles/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
